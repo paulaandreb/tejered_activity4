@@ -1,0 +1,33 @@
+sequenceDiagram
+    participant W1 as Nodo A
+    participant H as Coordinador: hilo conn-nodo
+    participant M as Coordinador: hilo monitor
+    participant Q as Registro y cola de tareas
+    participant B as EventBus
+    participant O as Observador remoto
+    participant D as Coordinador: hilo dispatcher
+    participant W2 as Nodo B
+
+    W1-)H: HEARTBEAT cada 0.3 s
+
+    alt El proceso termina abruptamente
+        W1--xH: la conexión TCP se cierra
+        H->>Q: lose_worker(A, conexion_cerrada)
+    else El proceso queda colgado
+        Note over W1,H: La conexión sigue abierta, pero no llegan latidos
+        M->>M: revisar last_seen cada 0.1 s
+        M->>Q: lose_worker(A, sin_latidos) tras 1.5 s
+    end
+
+    Q->>Q: devolver tareas RUNNING de A a la cola
+    Q-)B: publish(node.down)
+    B-)O: EVENT node.down
+    Q-->>D: notify_all()
+    D-)W2: ASSIGN {task_id, intento + 1}
+    W2-)H: RESULT {task_id, intento + 1}
+    H->>Q: marcar DONE
+
+    opt El nodo A se recupera y envía un resultado tardío
+        W1-)H: RESULT {task_id, intento anterior}
+        H->>Q: comparar intento y descartar duplicado
+    end

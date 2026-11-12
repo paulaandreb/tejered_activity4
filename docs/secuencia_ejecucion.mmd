@@ -1,0 +1,36 @@
+sequenceDiagram
+    actor U as Aplicación cliente
+    participant P as CoordinatorProxy
+    participant C as Coordinador: hilo conn-cliente
+    participant D as Coordinador: hilo dispatcher
+    participant W as Nodo: hilo lector
+    participant E as Nodo: hilo exec-k
+    participant R as Coordinador: hilo conn-nodo
+
+    U->>P: submit(tareas)
+    P->>C: SUBMIT {tareas}
+    activate C
+    C->>C: registrar tareas PENDING
+    C-->>D: notify_all()
+    C-->>P: SUBMITTED {job_id}
+    deactivate C
+    P-->>U: job_id
+
+    loop Mientras haya tareas y ventana libre
+        D->>D: select() del nodo con menor carga
+        D-)W: ASSIGN {task_id, intento}
+        W-)E: cola interna put()
+        activate E
+        E->>E: ejecutar tarea
+        E-)R: RESULT {task_id, intento, salida}
+        deactivate E
+        R->>R: marcar DONE, liberar ventana
+        R-->>D: notify_all()
+    end
+
+    U->>P: wait(job_id)
+    loop Hasta que el lote termine
+        P->>C: JOB_STATUS {job_id}
+        C-->>P: STATUS_REPLY {done, failed}
+    end
+    P-->>U: resultado del lote
